@@ -3,6 +3,7 @@
   "version": "1.0.0",
   "private": true,
   "scripts": {
+    "build:data": "python scripts/generate_viz_json.py",
     "dev": "next dev",
     "build": "next build",
     "start": "next start",

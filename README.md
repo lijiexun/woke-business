@@ -60,6 +60,27 @@ npm run dev
 - Required columns:
   - `year, vol, iss, author, title, abstract, url, type, journal, field, woke_score, keywords, justification`
 
+## Build Visualization JSON Artifacts
+Generate compact static files for deployment and chart loading:
+
+```bash
+npm run build:data
+```
+
+This reads `data/utd_scores.csv` and writes these files under `public/data/`:
+- `summary.json`
+- `filters.json`
+- `overall_trend.json`
+- `journal_year_heatmap.json`
+- `field_trend.json`
+- `author_ranking_min5.json`
+- `journal_internal_ranking.json`
+- `keyword_over_time_top500.json`
+- `wordcloud_by_journal.json`
+- `wordcloud_by_field.json`
+- `emerging_words_default_split.json`
+- `manifest.json`
+
 ## Large Dataset Workflow (Windows)
 - Keep the full dataset local only (`data/utd_scores.csv`) and out of git history.
 - Compress local raw data when needed:
