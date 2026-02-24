@@ -1,0 +1,11 @@
+# dependencies
+node_modules
+.next
+coverage
+*.log
+
+# local datasets and large artifacts (keep out of git history)
+data/*.csv
+data/*.csv.gz
+data/*.parquet
+data/exports/
