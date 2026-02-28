@@ -5,9 +5,9 @@ import type { Filters, ParsedRow } from "@/lib/types";
 
 type SmoothingMode = "none" | 3 | 5;
 type FieldMode = "raw" | "zscore";
+type JournalMode = "raw" | "zscore";
 type KeywordMetric = "raw" | "normalized";
-type RankingScope = "global" | "year_journal";
-type WordCloudMode = "journal" | "field" | "emerging";
+type WordCloudMode = "global" | "emerging";
 
 type DataState = {
   rawRows: ParsedRow[];
@@ -15,15 +15,13 @@ type DataState = {
   authorMinPubs: number;
   selectedAuthor: string | null;
   selectedKeyword: string;
+  selectedKeywordColor: string;
   selectedJournalForRanking: string;
-  rankingScope: RankingScope;
   splitYear: number;
   heatmapSortByMean: boolean;
-  showMedian: boolean;
-  showP90: boolean;
-  showIqr: boolean;
   smoothing: SmoothingMode;
   fieldMode: FieldMode;
+  journalMode: JournalMode;
   keywordMetric: KeywordMetric;
   wordCloudMode: WordCloudMode;
   activeNav: "overview" | "journals" | "fields" | "authors" | "keywords";
@@ -37,15 +35,13 @@ type DataState = {
   setAuthorMinPubs: (value: number) => void;
   setSelectedAuthor: (value: string | null) => void;
   setSelectedKeyword: (value: string) => void;
+  setSelectedKeywordColor: (value: string) => void;
   setSelectedJournalForRanking: (value: string) => void;
-  setRankingScope: (value: RankingScope) => void;
   setSplitYear: (value: number) => void;
   setHeatmapSortByMean: (value: boolean) => void;
-  setShowMedian: (value: boolean) => void;
-  setShowP90: (value: boolean) => void;
-  setShowIqr: (value: boolean) => void;
   setSmoothing: (value: SmoothingMode) => void;
   setFieldMode: (value: FieldMode) => void;
+  setJournalMode: (value: JournalMode) => void;
   setKeywordMetric: (value: KeywordMetric) => void;
   setWordCloudMode: (value: WordCloudMode) => void;
   setActiveNav: (value: DataState["activeNav"]) => void;
@@ -66,17 +62,15 @@ export const useDataStore = create<DataState>((set, get) => ({
   authorMinPubs: 5,
   selectedAuthor: null,
   selectedKeyword: "",
+  selectedKeywordColor: "",
   selectedJournalForRanking: "",
-  rankingScope: "global",
   splitYear: 2011,
   heatmapSortByMean: false,
-  showMedian: true,
-  showP90: false,
-  showIqr: true,
   smoothing: "none",
   fieldMode: "raw",
+  journalMode: "raw",
   keywordMetric: "raw",
-  wordCloudMode: "journal",
+  wordCloudMode: "global",
   activeNav: "overview",
   loading: false,
   error: "",
@@ -110,15 +104,13 @@ export const useDataStore = create<DataState>((set, get) => ({
   setAuthorMinPubs: (authorMinPubs) => set({ authorMinPubs }),
   setSelectedAuthor: (selectedAuthor) => set({ selectedAuthor }),
   setSelectedKeyword: (selectedKeyword) => set({ selectedKeyword }),
+  setSelectedKeywordColor: (selectedKeywordColor) => set({ selectedKeywordColor }),
   setSelectedJournalForRanking: (selectedJournalForRanking) => set({ selectedJournalForRanking }),
-  setRankingScope: (rankingScope) => set({ rankingScope }),
   setSplitYear: (splitYear) => set({ splitYear }),
   setHeatmapSortByMean: (heatmapSortByMean) => set({ heatmapSortByMean }),
-  setShowMedian: (showMedian) => set({ showMedian }),
-  setShowP90: (showP90) => set({ showP90 }),
-  setShowIqr: (showIqr) => set({ showIqr }),
   setSmoothing: (smoothing) => set({ smoothing }),
   setFieldMode: (fieldMode) => set({ fieldMode }),
+  setJournalMode: (journalMode) => set({ journalMode }),
   setKeywordMetric: (keywordMetric) => set({ keywordMetric }),
   setWordCloudMode: (wordCloudMode) => set({ wordCloudMode }),
   setActiveNav: (activeNav) => set({ activeNav })

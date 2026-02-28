@@ -5,33 +5,54 @@ import { SidebarFilters } from "@/components/layout/SidebarFilters";
 import { TopNav } from "@/components/layout/TopNav";
 import { SummaryStrip } from "@/components/SummaryStrip";
 import { OverallTrendChart } from "@/components/charts/OverallTrendChart";
-import { JournalYearHeatmap } from "@/components/charts/JournalYearHeatmap";
 import { FieldTrendChart } from "@/components/charts/FieldTrendChart";
+import { JournalTrendChart } from "@/components/charts/JournalTrendChart";
+import type { MultiSelectOption } from "@/components/ui/MultiSelect";
 import { AuthorsSection } from "@/components/sections/AuthorsSection";
 import { JournalRankingSection } from "@/components/sections/JournalRankingSection";
 import { KeywordsSection } from "@/components/sections/KeywordsSection";
 import { WordCloudSection } from "@/components/sections/WordCloudSection";
 import {
   computeFieldTrend,
-  computeJournalYearHeatmap,
+  computeJournalTrend,
   computeYearStats,
   dataSummary,
-  filterRows
+  filterRows,
+  topKeywords
 } from "@/lib/aggregate";
-import { loadCsvFromFile, loadCsvFromUrl } from "@/lib/parse";
+import { rainbowColorByRank } from "@/lib/keywordColor";
+import { loadCsvFromUrl, loadRuntimeRowsFromUrl } from "@/lib/parse";
 import { useDataStore } from "@/store/useDataStore";
 
 export default function HomePage() {
   const store = useDataStore();
   const initializedRef = useRef(false);
+  const prevNavRef = useRef(store.activeNav);
 
   useEffect(() => {
     if (initializedRef.current || store.rawRows.length) return;
     initializedRef.current = true;
     store.setLoading(true);
-    loadCsvFromUrl("/sample.csv")
-      .then((rows) => store.setRows(rows))
-      .catch(() => store.setError("Failed to load /public/sample.csv. Please upload a CSV."))
+    loadRuntimeRowsFromUrl("/data/runtime_rows_manifest.json")
+      .then((rows) => {
+        if (!rows.length) throw new Error("Primary runtime JSON resolved to zero rows.");
+        store.setRows(rows);
+      })
+      .catch(() =>
+        loadCsvFromUrl("/api/utd-csv")
+          .then((rows) => {
+            if (!rows.length) throw new Error("CSV fallback resolved to zero rows.");
+            store.setRows(rows);
+          })
+          .catch(() =>
+            loadCsvFromUrl("/sample.csv")
+              .then((rows) => {
+                if (!rows.length) throw new Error("Sample dataset resolved to zero rows.");
+                store.setRows(rows);
+              })
+              .catch(() => store.setError("Failed to load runtime JSON, full CSV route, and /public/sample.csv."))
+          )
+      )
       .finally(() => store.setLoading(false));
   }, [store.rawRows.length, store.setError, store.setLoading, store.setRows]);
 
@@ -44,58 +65,114 @@ export default function HomePage() {
   const options = useMemo(() => {
     const journals = [...new Set(store.rawRows.map((r) => r.journal).filter(Boolean))].sort();
     const fields = [...new Set(store.rawRows.map((r) => r.field).filter(Boolean))].sort();
-    const types = [...new Set(store.rawRows.map((r) => r.type).filter(Boolean))].sort();
+    const typeCounts = new Map<string, number>();
+
+    store.rawRows.forEach((row) => {
+      const type = row.type.trim();
+      if (!type) return;
+      typeCounts.set(type, (typeCounts.get(type) ?? 0) + 1);
+    });
+
+    const entries = [...typeCounts.entries()];
+    const sorted = entries
+      .filter(([type]) => type !== "Other")
+      .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
+
+    const other = entries.find(([type]) => type === "Other");
+    if (other) sorted.push(other);
+
+    const types: MultiSelectOption[] = sorted.map(([type]) => ({
+      value: type,
+      label: type
+    }));
+
     return { journals, fields, types };
   }, [store.rawRows]);
 
+  const fieldConstrainedRows = useMemo(
+    () =>
+      store.filters.fields.length
+        ? store.rawRows.filter((row) => store.filters.fields.includes(row.field))
+        : store.rawRows,
+    [store.rawRows, store.filters.fields]
+  );
+
+  const availableJournalsByField = useMemo(
+    () => new Set(fieldConstrainedRows.map((r) => r.journal).filter(Boolean)),
+    [fieldConstrainedRows]
+  );
+  const availableTypesByField = useMemo(
+    () => new Set(fieldConstrainedRows.map((r) => r.type).filter(Boolean)),
+    [fieldConstrainedRows]
+  );
+
+  const journalOptions = useMemo(
+    () =>
+      options.journals.map((journal) => ({
+        value: journal,
+        label: journal,
+        disabled: store.filters.fields.length > 0 && !availableJournalsByField.has(journal)
+      })),
+    [options.journals, store.filters.fields.length, availableJournalsByField]
+  );
+
+  const typeOptions = useMemo(
+    () =>
+      options.types.map((type) => ({
+        ...type,
+        disabled: store.filters.fields.length > 0 && !availableTypesByField.has(type.value)
+      })),
+    [options.types, store.filters.fields.length, availableTypesByField]
+  );
+
+  useEffect(() => {
+    if (!store.filters.fields.length) return;
+
+    const nextJournals = store.filters.journals.filter((journal) => availableJournalsByField.has(journal));
+    const nextTypes = store.filters.types.filter((type) => availableTypesByField.has(type));
+    if (nextJournals.length === store.filters.journals.length && nextTypes.length === store.filters.types.length) return;
+
+    store.setFilters({
+      journals: nextJournals,
+      types: nextTypes
+    });
+  }, [
+    store.filters.fields.length,
+    store.filters.journals,
+    store.filters.types,
+    availableJournalsByField,
+    availableTypesByField,
+    store.setFilters
+  ]);
+
   const filteredRows = useMemo(() => filterRows(store.rawRows, store.filters), [store.rawRows, store.filters]);
+  const filteredJournals = useMemo(
+    () => [...new Set(filteredRows.map((r) => r.journal).filter(Boolean))].sort(),
+    [filteredRows]
+  );
   const summary = useMemo(() => dataSummary(filteredRows, store.filters), [filteredRows, store.filters]);
 
   const overallStats = useMemo(() => computeYearStats(filteredRows), [filteredRows]);
-  const heatmap = useMemo(
-    () => computeJournalYearHeatmap(filteredRows, store.heatmapSortByMean),
-    [filteredRows, store.heatmapSortByMean]
+  const journalTrend = useMemo(
+    () => computeJournalTrend(filteredRows, store.journalMode === "zscore"),
+    [filteredRows, store.journalMode]
   );
+
   const fieldTrend = useMemo(
     () => computeFieldTrend(filteredRows, store.fieldMode === "zscore"),
     [filteredRows, store.fieldMode]
   );
 
-  const exportFiltered = () => {
-    const columns = [
-      "year",
-      "vol",
-      "iss",
-      "author",
-      "title",
-      "abstract",
-      "url",
-      "type",
-      "journal",
-      "field",
-      "woke_score",
-      "keywords",
-      "justification"
-    ];
-    const escape = (v: unknown) => `"${String(v ?? "").replaceAll("\"", "\"\"")}"`;
-    const lines = [columns.join(",")];
-    filteredRows.forEach((r) => {
-      lines.push(columns.map((c) => escape((r as Record<string, unknown>)[c])).join(","));
-    });
-    const blob = new Blob([lines.join("\n")], { type: "text/csv;charset=utf-8" });
-    const a = document.createElement("a");
-    a.href = URL.createObjectURL(blob);
-    a.download = "filtered_utd_scores.csv";
-    a.click();
-    URL.revokeObjectURL(a.href);
-  };
-
-  const handleJournalDrilldown = (journal: string) => {
-    const exists = store.filters.journals.includes(journal);
-    store.setFilters({ journals: exists ? store.filters.journals.filter((j) => j !== journal) : [journal] });
-    store.setSelectedJournalForRanking(journal);
-    store.setActiveNav("journals");
-  };
+  useEffect(() => {
+    const prevNav = prevNavRef.current;
+    if (store.activeNav === "keywords" && prevNav !== "keywords") {
+      const rankedKeywords = topKeywords(filteredRows, 500);
+      const topKeyword = rankedKeywords[0]?.keyword ?? "";
+      store.setSelectedKeyword(topKeyword);
+      store.setSelectedKeywordColor(rainbowColorByRank(0, Math.max(1, rankedKeywords.length)));
+    }
+    prevNavRef.current = store.activeNav;
+  }, [store.activeNav, filteredRows, store.setSelectedKeyword, store.setSelectedKeywordColor]);
 
   return (
     <main className="mx-auto max-w-[1600px] p-4">
@@ -105,19 +182,11 @@ export default function HomePage() {
         <SidebarFilters
           filters={store.filters}
           years={years}
-          journals={options.journals}
+          journals={journalOptions}
           fields={options.fields}
-          types={options.types}
+          types={typeOptions}
           onFilters={store.setFilters}
           onReset={store.resetFilters}
-          onExport={exportFiltered}
-          onFile={(file) => {
-            store.setLoading(true);
-            loadCsvFromFile(file)
-              .then((rows) => store.setRows(rows))
-              .catch(() => store.setError("Unable to parse CSV."))
-              .finally(() => store.setLoading(false));
-          }}
         />
 
         <section>
@@ -127,86 +196,62 @@ export default function HomePage() {
           {store.error && <div className="panel mb-4 border-red-200 p-4 text-red-700">{store.error}</div>}
 
           {store.activeNav === "overview" && (
-            <div className="space-y-4">
-              <section className="panel p-4" id="overview">
-                <div className="mb-3 flex flex-wrap items-center gap-3">
-                  <h3 className="section-title">Overall Trend Chart</h3>
-                  <label className="flex items-center gap-2 text-sm">
-                    <input type="checkbox" checked={store.showMedian} onChange={(e) => store.setShowMedian(e.target.checked)} />
-                    Median
-                  </label>
-                  <label className="flex items-center gap-2 text-sm">
-                    <input type="checkbox" checked={store.showIqr} onChange={(e) => store.setShowIqr(e.target.checked)} />
-                    IQR Band
-                  </label>
-                  <label className="flex items-center gap-2 text-sm">
-                    <input type="checkbox" checked={store.showP90} onChange={(e) => store.setShowP90(e.target.checked)} />
-                    P90
-                  </label>
-                  <select
-                    className="select max-w-52"
-                    value={String(store.smoothing)}
-                    onChange={(e) => {
-                      const next = e.target.value === "none" ? "none" : Number(e.target.value);
-                      store.setSmoothing(next as "none" | 3 | 5);
-                    }}
-                  >
-                    <option value="none">No smoothing</option>
-                    <option value="3">3-year MA</option>
-                    <option value="5">5-year MA</option>
-                  </select>
-                </div>
-                <OverallTrendChart
-                  stats={overallStats}
-                  showMedian={store.showMedian}
-                  showP90={store.showP90}
-                  showIqr={store.showIqr}
-                  smoothing={store.smoothing}
-                />
-              </section>
-
-              <section className="panel p-4">
-                <div className="mb-3 flex items-center justify-between">
-                  <h3 className="section-title">Journal x Year Heatmap</h3>
-                  <label className="flex items-center gap-2 text-sm">
-                    <input
-                      type="checkbox"
-                      checked={store.heatmapSortByMean}
-                      onChange={(e) => store.setHeatmapSortByMean(e.target.checked)}
-                    />
-                    Sort journals by filtered mean
-                  </label>
-                </div>
-                <JournalYearHeatmap data={heatmap} onJournalClick={handleJournalDrilldown} />
-              </section>
-            </div>
+            <section className="panel p-4" id="overview">
+              <div className="mb-3 flex flex-wrap items-center gap-3">
+                <h3 className="section-title">Overall Trend Chart</h3>
+                <select
+                  className="select max-w-52"
+                  value={String(store.smoothing)}
+                  onChange={(e) => {
+                    const next = e.target.value === "none" ? "none" : Number(e.target.value);
+                    store.setSmoothing(next as "none" | 3 | 5);
+                  }}
+                >
+                  <option value="none">No smoothing</option>
+                  <option value="3">3-year MA</option>
+                  <option value="5">5-year MA</option>
+                </select>
+              </div>
+              <OverallTrendChart
+                stats={overallStats}
+                smoothing={store.smoothing}
+              />
+            </section>
           )}
 
           {store.activeNav === "journals" && (
             <div className="space-y-4">
               <section className="panel p-4">
-                <div className="mb-3 flex items-center justify-between">
-                  <h3 className="section-title">Journal x Year Heatmap</h3>
+                <div className="mb-3 flex flex-wrap items-center gap-3">
+                  <h3 className="section-title">Journal Trend Comparison</h3>
                   <label className="flex items-center gap-2 text-sm">
                     <input
-                      type="checkbox"
-                      checked={store.heatmapSortByMean}
-                      onChange={(e) => store.setHeatmapSortByMean(e.target.checked)}
+                      type="radio"
+                      checked={store.journalMode === "raw"}
+                      onChange={() => store.setJournalMode("raw")}
                     />
-                    Sort journals by filtered mean
+                    Raw
+                  </label>
+                  <label className="flex items-center gap-2 text-sm">
+                    <input
+                      type="radio"
+                      checked={store.journalMode === "zscore"}
+                      onChange={() => store.setJournalMode("zscore")}
+                    />
+                    Z-score within journal
                   </label>
                 </div>
-                <JournalYearHeatmap data={heatmap} onJournalClick={handleJournalDrilldown} />
+                <JournalTrendChart
+                  years={journalTrend.years}
+                  series={journalTrend.series}
+                  yLabel={store.journalMode === "raw" ? "Mean woke score" : "Z-score"}
+                />
               </section>
               <JournalRankingSection
                 globalRows={filteredRows}
-                rawRows={store.rawRows}
-                journal={store.selectedJournalForRanking || options.journals[0] || ""}
-                journals={options.journals}
-                scope={store.rankingScope}
-                yearRange={store.filters.yearRange}
+                journal={store.selectedJournalForRanking || filteredJournals[0] || ""}
+                journals={filteredJournals}
                 onJournal={store.setSelectedJournalForRanking}
-                onScope={store.setRankingScope}
               />
             </div>
           )}
@@ -214,7 +259,7 @@ export default function HomePage() {
           {store.activeNav === "fields" && (
             <section className="panel p-4" id="fields">
               <div className="mb-3 flex flex-wrap items-center gap-3">
-                <h3 className="section-title">Field Trend Comparison</h3>
+                <h3 className="section-title">Discipline Trend Comparison</h3>
                 <label className="flex items-center gap-2 text-sm">
                   <input
                     type="radio"
@@ -229,7 +274,7 @@ export default function HomePage() {
                     checked={store.fieldMode === "zscore"}
                     onChange={() => store.setFieldMode("zscore")}
                   />
-                  Z-score within field
+                  Z-score within discipline
                 </label>
               </div>
               <FieldTrendChart
@@ -252,23 +297,24 @@ export default function HomePage() {
 
           {store.activeNav === "keywords" && (
             <div className="space-y-4">
+              <WordCloudSection
+                rows={filteredRows}
+                onKeywordClick={(keyword, color) => {
+                  store.setSelectedKeyword(keyword);
+                  store.setSelectedKeywordColor(color);
+                }}
+              />
               <KeywordsSection
                 rows={filteredRows}
                 selectedKeyword={store.selectedKeyword}
+                selectedKeywordColor={store.selectedKeywordColor}
                 metric={store.keywordMetric}
-                onKeyword={store.setSelectedKeyword}
+                onKeyword={(keyword) => {
+                  store.setSelectedKeyword(keyword);
+                  store.setSelectedKeywordColor("");
+                }}
                 onMetric={store.setKeywordMetric}
                 onYearClick={(year) => store.setFilters({ yearRange: [year, year] })}
-              />
-              <WordCloudSection
-                rows={filteredRows}
-                mode={store.wordCloudMode}
-                splitYear={store.splitYear}
-                journals={options.journals}
-                fields={options.fields}
-                onMode={store.setWordCloudMode}
-                onSplitYear={store.setSplitYear}
-                onKeywordClick={(keyword) => store.setSelectedKeyword(keyword)}
               />
             </div>
           )}

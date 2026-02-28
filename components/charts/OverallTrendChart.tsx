@@ -6,23 +6,59 @@ import { EChart } from "@/components/charts/EChart";
 
 type Props = {
   stats: YearStat[];
-  showMedian: boolean;
-  showP90: boolean;
-  showIqr: boolean;
   smoothing: "none" | 3 | 5;
 };
 
-export function OverallTrendChart({ stats, showMedian, showP90, showIqr, smoothing }: Props) {
+const SCORE_COLORS = [
+  "#1d4ed8",
+  "#2563eb",
+  "#3b82f6",
+  "#60a5fa",
+  "#93c5fd",
+  "#fca5a5",
+  "#f87171",
+  "#ef4444",
+  "#dc2626",
+  "#b91c1c"
+];
+
+function scoreToColor(value: number): string {
+  const clamped = Math.min(10, Math.max(1, value));
+  const idx = Math.min(SCORE_COLORS.length - 1, Math.max(0, Math.round(clamped) - 1));
+  return SCORE_COLORS[idx];
+}
+
+export function OverallTrendChart({ stats, smoothing }: Props) {
   const years = stats.map((s) => s.year);
   const mean = stats.map((s) => s.mean);
-  const median = stats.map((s) => s.median);
-  const p90 = stats.map((s) => s.p90);
-  const p25 = stats.map((s) => s.p25);
-  const iqrDiff = stats.map((s) => s.p75 - s.p25);
+  const ci95Low = stats.map((s) => s.ci95Low);
+  const ci95High = stats.map((s) => s.ci95High);
 
   const smoothedMean = smoothing === "none" ? mean : movingAverage(mean, smoothing);
-  const smoothedMedian = smoothing === "none" ? median : movingAverage(median, smoothing);
-  const smoothedP90 = smoothing === "none" ? p90 : movingAverage(p90, smoothing);
+  const smoothedCi95Low = smoothing === "none" ? ci95Low : movingAverage(ci95Low, smoothing);
+  const smoothedCi95High = smoothing === "none" ? ci95High : movingAverage(ci95High, smoothing);
+  const ci95Diff = smoothedCi95High.map((high, idx) => Math.max(0, high - smoothedCi95Low[idx]));
+  const yValues = [...smoothedMean, ...smoothedCi95Low, ...smoothedCi95High];
+  const rawMin = yValues.length ? Math.min(...yValues) : 1;
+  const rawMax = yValues.length ? Math.max(...yValues) : 10;
+  const spread = Math.max(rawMax - rawMin, 0.6);
+  const pad = spread * 0.2;
+  const yMin = Math.max(1, Number((rawMin - pad).toFixed(2)));
+  const yMax = Math.min(10, Number((rawMax + pad).toFixed(2)));
+
+  const scoreGradient = {
+    type: "linear",
+    x: 0,
+    y: 1,
+    x2: 0,
+    y2: 0,
+    colorStops: [
+      { offset: 0, color: "#1d4ed8" },
+      { offset: 0.5, color: "#93c5fd" },
+      { offset: 0.7, color: "#fca5a5" },
+      { offset: 1, color: "#b91c1c" }
+    ]
+  };
 
   const option = {
     animationDuration: 400,
@@ -31,71 +67,85 @@ export function OverallTrendChart({ stats, showMedian, showP90, showIqr, smoothi
       formatter: (params: any[]) => {
         const idx = params?.[0]?.dataIndex ?? 0;
         const s = stats[idx];
-        return [
+        const lines = [
           `Year: ${s.year}`,
           `Papers: ${s.count}`,
-          `Mean: ${s.mean.toFixed(2)}`,
-          `Median: ${s.median.toFixed(2)}`,
-          `P25: ${s.p25.toFixed(2)} | P75: ${s.p75.toFixed(2)}`,
-          `P90: ${s.p90.toFixed(2)}`
-        ].join("<br/>");
+          `Mean: ${s.mean.toFixed(2)}`
+        ];
+        lines.push(`95% Interval: ${s.ci95Low.toFixed(2)} - ${s.ci95High.toFixed(2)}`);
+        return lines.join("<br/>");
       }
     },
-    legend: { top: 0 },
-    grid: { left: 36, right: 20, top: 40, bottom: 28 },
+    legend: { top: 0, data: ["Mean", "95% Interval"] },
+    grid: { left: 36, right: 20, top: 42, bottom: 28 },
     xAxis: { type: "category", data: years },
-    yAxis: { type: "value", min: 1, max: 10 },
+    yAxis: {
+      type: "value",
+      min: yMin,
+      max: yMax,
+      splitArea: {
+        show: true,
+        areaStyle: {
+          color: [
+            "rgba(29, 78, 216, 0.04)",
+            "rgba(37, 99, 235, 0.035)",
+            "rgba(59, 130, 246, 0.03)",
+            "rgba(96, 165, 250, 0.025)",
+            "rgba(147, 197, 253, 0.02)",
+            "rgba(252, 165, 165, 0.02)",
+            "rgba(248, 113, 113, 0.025)",
+            "rgba(239, 68, 68, 0.03)",
+            "rgba(220, 38, 38, 0.035)",
+            "rgba(185, 28, 28, 0.04)"
+          ]
+        }
+      }
+    },
     series: [
-      showIqr
-        ? {
-            name: "P25 Baseline",
-            type: "line",
-            stack: "iqr",
-            lineStyle: { opacity: 0 },
-            symbol: "none",
-            data: p25
+      {
+        name: "95% Lower",
+        type: "line",
+        stack: "ci95",
+        lineStyle: { opacity: 0 },
+        symbol: "none",
+        data: smoothedCi95Low,
+        tooltip: { show: false },
+        emphasis: { disabled: true }
+      },
+      {
+        name: "95% Interval",
+        type: "line",
+        stack: "ci95",
+        lineStyle: { opacity: 0 },
+        areaStyle: {
+          color: {
+            type: "linear",
+            x: 0,
+            y: 1,
+            x2: 0,
+            y2: 0,
+            colorStops: [
+              { offset: 0, color: "rgba(29, 78, 216, 0.18)" },
+              { offset: 0.5, color: "rgba(148, 163, 184, 0.12)" },
+              { offset: 1, color: "rgba(185, 28, 28, 0.18)" }
+            ]
           }
-        : null,
-      showIqr
-        ? {
-            name: "IQR",
-            type: "line",
-            stack: "iqr",
-            lineStyle: { opacity: 0 },
-            areaStyle: { color: "rgba(20, 184, 166, 0.16)" },
-            symbol: "none",
-            data: iqrDiff
-          }
-        : null,
+        },
+        symbol: "none",
+        data: ci95Diff
+      },
       {
         name: "Mean",
         type: "line",
         smooth: true,
-        lineStyle: { width: 3, color: "#0f766e" },
+        lineStyle: { width: 3, color: scoreGradient },
+        itemStyle: {
+          color: (params: any) => scoreToColor(Number(params.value))
+        },
         symbolSize: 6,
         data: smoothedMean
-      },
-      showMedian
-        ? {
-            name: "Median",
-            type: "line",
-            smooth: true,
-            lineStyle: { width: 2, color: "#475569", type: "dashed" },
-            symbolSize: 4,
-            data: smoothedMedian
-          }
-        : null,
-      showP90
-        ? {
-            name: "P90",
-            type: "line",
-            smooth: true,
-            lineStyle: { width: 2, color: "#b45309" },
-            symbolSize: 4,
-            data: smoothedP90
-          }
-        : null
-    ].filter(Boolean)
+      }
+    ]
   };
 
   return <EChart option={option} height={420} />;

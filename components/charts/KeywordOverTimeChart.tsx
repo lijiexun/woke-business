@@ -6,11 +6,13 @@ export function KeywordOverTimeChart({
   keyword,
   points,
   metric,
+  color = "#0f766e",
   onYearClick
 }: {
   keyword: string;
   points: Array<{ year: number; count: number; normalizedPer1k: number }>;
   metric: "raw" | "normalized";
+  color?: string;
   onYearClick?: (year: number) => void;
 }) {
   const years = points.map((p) => p.year);
@@ -32,7 +34,14 @@ export function KeywordOverTimeChart({
       {
         name: keyword,
         type: "bar",
-        itemStyle: { color: "#0f766e" },
+        itemStyle: { color, opacity: 0.78 },
+        emphasis: {
+          disabled: true,
+          itemStyle: { color, opacity: 0.78 }
+        },
+        blur: {
+          itemStyle: { opacity: 0.78 }
+        },
         data: values
       }
     ]

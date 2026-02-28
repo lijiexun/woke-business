@@ -7,6 +7,8 @@ export type ParsedRow = {
   abstract: string;
   url: string;
   type: string;
+  type_raw: string;
+  type_main: string;
   journal: string;
   field: string;
   woke_score: number;
@@ -34,6 +36,8 @@ export type YearStat = {
   p25: number;
   p75: number;
   p90: number;
+  ci95Low: number;
+  ci95High: number;
 };
 
 export type AuthorStat = {
@@ -41,11 +45,16 @@ export type AuthorStat = {
   count: number;
   mean: number;
   stdev: number;
+  ci95Low: number;
+  ci95High: number;
 };
 
 export type RankedPaper = {
   title: string;
+  vol: string;
+  iss: string;
   year: number;
+  abstract: string;
   woke_score: number;
   keywords: string[];
   justification: string;
@@ -53,4 +62,5 @@ export type RankedPaper = {
   journal: string;
   field: string;
   author: string;
+  authorsList: string[];
 };

@@ -6,9 +6,10 @@ type Props = {
   max: number;
   value: [number, number];
   onChange: (value: [number, number]) => void;
+  rangeClassName?: string;
 };
 
-export function DualRange({ label, min, max, value, onChange }: Props) {
+export function DualRange({ label, min, max, value, onChange, rangeClassName = "" }: Props) {
   const [from, to] = value;
   return (
     <div>
@@ -25,7 +26,7 @@ export function DualRange({ label, min, max, value, onChange }: Props) {
           max={max}
           value={from}
           onChange={(e) => onChange([Math.min(Number(e.target.value), to), to])}
-          className="w-full"
+          className={`w-full ${rangeClassName}`.trim()}
         />
         <input
           type="range"
@@ -33,7 +34,7 @@ export function DualRange({ label, min, max, value, onChange }: Props) {
           max={max}
           value={to}
           onChange={(e) => onChange([from, Math.max(Number(e.target.value), from)])}
-          className="w-full"
+          className={`w-full ${rangeClassName}`.trim()}
         />
       </div>
     </div>

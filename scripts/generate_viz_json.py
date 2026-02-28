@@ -8,10 +8,26 @@ from pathlib import Path
 
 INPUT_CSV = Path("data/utd_scores.csv")
 OUTPUT_DIR = Path("public/data")
+RUNTIME_ROWS_DIR = OUTPUT_DIR / "runtime_rows"
 DEFAULT_SPLIT_YEAR = 2011
 TOP_KEYWORDS = 500
 WORD_CLOUD_LIMIT = 120
 MIN_AUTHOR_PUBS = 5
+RUNTIME_SCHEMA = [
+    "year",
+    "vol",
+    "iss",
+    "author",
+    "title",
+    "abstract",
+    "url",
+    "type",
+    "journal",
+    "field",
+    "woke_score",
+    "keywords",
+    "justification",
+]
 
 AUTHOR_NOISE = [
     "Search for more papers by this author",
@@ -27,6 +43,12 @@ def safe_int(value, fallback=0):
         return int(str(value).strip())
     except Exception:
         return fallback
+
+
+def as_text(value):
+    if value is None:
+        return ""
+    return str(value).strip()
 
 
 def percentile(sorted_values, p):
@@ -121,6 +143,7 @@ def build():
     journals_counter = Counter()
     fields_counter = Counter()
     types_counter = Counter()
+    runtime_rows_by_year = defaultdict(list)
 
     with INPUT_CSV.open("r", encoding="utf-8-sig", newline="") as f:
         reader = csv.DictReader(f)
@@ -154,6 +177,8 @@ def build():
                 fields_counter[field] += 1
             if typ:
                 types_counter[typ] += 1
+
+            runtime_rows_by_year[year].append([as_text(row.get(col)) for col in RUNTIME_SCHEMA])
 
     years_sorted = sorted(years_counter)
 
@@ -373,9 +398,40 @@ def build():
         )
     )
 
+    # Runtime row chunks: enable full-feature client filtering without shipping CSV.
+    RUNTIME_ROWS_DIR.mkdir(parents=True, exist_ok=True)
+    for stale in RUNTIME_ROWS_DIR.glob("*.json"):
+        stale.unlink()
+
+    runtime_files = []
+    total_runtime_rows = 0
+    for year in sorted(runtime_rows_by_year):
+        chunk_rows = runtime_rows_by_year[year]
+        payload = {"year": year, "rows": chunk_rows}
+        chunk_path = RUNTIME_ROWS_DIR / f"{year}.json"
+        chunk_path.write_text(json.dumps(payload, ensure_ascii=True, separators=(",", ":")), encoding="utf-8")
+        runtime_files.append(
+            {
+                "year": year,
+                "path": f"/data/runtime_rows/{year}.json",
+                "rows": len(chunk_rows),
+                "bytes": chunk_path.stat().st_size,
+            }
+        )
+        total_runtime_rows += len(chunk_rows)
+
+    files.append(
+        write_json(
+            "runtime_rows_manifest.json",
+            {"schema": RUNTIME_SCHEMA, "total_rows": total_runtime_rows, "files": runtime_files},
+        )
+    )
+    files.extend([RUNTIME_ROWS_DIR / f"{item['year']}.json" for item in runtime_files])
+
     manifest = []
     for f in files:
-        manifest.append({"file": f.name, "bytes": f.stat().st_size})
+        rel = f.relative_to(OUTPUT_DIR)
+        manifest.append({"file": str(rel).replace("\\", "/"), "bytes": f.stat().st_size})
     write_json("manifest.json", {"input_csv": str(INPUT_CSV), "files": manifest})
 
     print("Generated JSON artifacts:")

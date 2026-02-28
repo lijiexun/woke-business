@@ -4,20 +4,55 @@ import { useMemo } from "react";
 import { computeKeywordOverTime, topKeywords } from "@/lib/aggregate";
 import type { ParsedRow } from "@/lib/types";
 import { KeywordOverTimeChart } from "@/components/charts/KeywordOverTimeChart";
+import { rainbowColorByRank } from "@/lib/keywordColor";
 
 type Props = {
   rows: ParsedRow[];
   selectedKeyword: string;
+  selectedKeywordColor: string;
   metric: "raw" | "normalized";
+  precomputedSeries?: Record<string, Array<{ year: number; count: number; per1k: number }>>;
   onKeyword: (value: string) => void;
   onMetric: (value: "raw" | "normalized") => void;
   onYearClick: (year: number) => void;
 };
 
-export function KeywordsSection({ rows, selectedKeyword, metric, onKeyword, onMetric, onYearClick }: Props) {
-  const options = useMemo(() => topKeywords(rows, 500), [rows]);
-  const activeKeyword = selectedKeyword || options[0]?.keyword || "";
-  const points = useMemo(() => (activeKeyword ? computeKeywordOverTime(rows, activeKeyword) : []), [rows, activeKeyword]);
+export function KeywordsSection({
+  rows,
+  selectedKeyword,
+  selectedKeywordColor,
+  metric,
+  precomputedSeries,
+  onKeyword,
+  onMetric,
+  onYearClick
+}: Props) {
+  const options = useMemo(() => {
+    if (!precomputedSeries) return topKeywords(rows, 500);
+    return Object.entries(precomputedSeries)
+      .map(([keyword, series]) => ({
+        keyword,
+        count: series.reduce((acc, p) => acc + p.count, 0)
+      }))
+      .sort((a, b) => b.count - a.count);
+  }, [rows, precomputedSeries]);
+
+  const hasSelected = selectedKeyword ? options.some((o) => o.keyword === selectedKeyword) : false;
+  const activeKeyword = hasSelected ? selectedKeyword : options[0]?.keyword || "";
+  const activeKeywordRank = activeKeyword ? options.findIndex((o) => o.keyword === activeKeyword) : -1;
+  const fallbackColor = rainbowColorByRank(Math.max(0, activeKeywordRank), Math.max(1, options.length));
+  const chartColor = hasSelected && selectedKeywordColor ? selectedKeywordColor : fallbackColor;
+  const points = useMemo(() => {
+    if (!activeKeyword) return [];
+    if (precomputedSeries) {
+      return (precomputedSeries[activeKeyword] ?? []).map((p) => ({
+        year: p.year,
+        count: p.count,
+        normalizedPer1k: p.per1k
+      }));
+    }
+    return computeKeywordOverTime(rows, activeKeyword);
+  }, [rows, activeKeyword, precomputedSeries]);
 
   return (
     <section className="panel p-4" id="keywords">
@@ -47,7 +82,13 @@ export function KeywordsSection({ rows, selectedKeyword, metric, onKeyword, onMe
       </div>
 
       {activeKeyword ? (
-        <KeywordOverTimeChart keyword={activeKeyword} points={points} metric={metric} onYearClick={onYearClick} />
+        <KeywordOverTimeChart
+          keyword={activeKeyword}
+          points={points}
+          metric={metric}
+          color={chartColor}
+          onYearClick={onYearClick}
+        />
       ) : (
         <div className="text-sm text-slate-600">No keyword available for current filters.</div>
       )}

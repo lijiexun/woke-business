@@ -1,11 +1,32 @@
 "use client";
 
+export type MultiSelectOption = {
+  value: string;
+  label: string;
+  disabled?: boolean;
+};
+
+type Option = string | MultiSelectOption;
+
 type Props = {
   value: string[];
-  options: string[];
+  options: Option[];
   onChange: (next: string[]) => void;
   placeholder?: string;
 };
+
+function optionValue(option: Option): string {
+  return typeof option === "string" ? option : option.value;
+}
+
+function optionLabel(option: Option): string {
+  if (typeof option === "string") return option || "(blank)";
+  return option.label || option.value || "(blank)";
+}
+
+function optionDisabled(option: Option): boolean {
+  return typeof option === "string" ? false : Boolean(option.disabled);
+}
 
 export function MultiSelect({ value, options, onChange, placeholder = "Select..." }: Props) {
   return (
@@ -20,8 +41,8 @@ export function MultiSelect({ value, options, onChange, placeholder = "Select...
     >
       {!options.length && <option>{placeholder}</option>}
       {options.map((opt) => (
-        <option key={opt} value={opt}>
-          {opt || "(blank)"}
+        <option key={optionValue(opt)} value={optionValue(opt)} disabled={optionDisabled(opt)}>
+          {optionLabel(opt)}
         </option>
       ))}
     </select>

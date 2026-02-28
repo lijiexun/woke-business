@@ -57,6 +57,13 @@ export function computeYearStats(rows: ParsedRow[]): YearStat[] {
       const sorted = [...scores].sort((a, b) => a - b);
       const count = sorted.length;
       const mean = sorted.reduce((acc, n) => acc + n, 0) / count;
+      const variance =
+        count > 1
+          ? sorted.reduce((acc, n) => acc + (n - mean) ** 2, 0) / (count - 1)
+          : 0;
+      const stderr = count > 0 ? Math.sqrt(variance) / Math.sqrt(count) : 0;
+      const ci95Low = Math.max(1, mean - 1.96 * stderr);
+      const ci95High = Math.min(10, mean + 1.96 * stderr);
       return {
         year,
         count,
@@ -64,7 +71,9 @@ export function computeYearStats(rows: ParsedRow[]): YearStat[] {
         median: percentile(sorted, 0.5),
         p25: percentile(sorted, 0.25),
         p75: percentile(sorted, 0.75),
-        p90: percentile(sorted, 0.9)
+        p90: percentile(sorted, 0.9),
+        ci95Low,
+        ci95High
       };
     });
 }
@@ -118,16 +127,23 @@ export function computeJournalYearHeatmap(rows: ParsedRow[], sortByMean = false)
 export function computeFieldTrend(rows: ParsedRow[], normalized = false) {
   const years = [...new Set(rows.map((r) => r.year))].sort((a, b) => a - b);
   const fields = [...new Set(rows.map((r) => r.field))].sort();
+  const bucket = new Map<string, { sum: number; count: number }>();
+
+  rows.forEach((row) => {
+    const key = `${row.field}__${row.year}`;
+    const prev = bucket.get(key) ?? { sum: 0, count: 0 };
+    prev.sum += row.woke_score;
+    prev.count += 1;
+    bucket.set(key, prev);
+  });
 
   const series = fields.map((field) => {
     const yearly = years.map((year) => {
-      const values = rows
-        .filter((r) => r.field === field && r.year === year)
-        .map((r) => r.woke_score);
-      if (!values.length) return { year, value: null as number | null };
+      const item = bucket.get(`${field}__${year}`);
+      if (!item) return { year, value: null as number | null };
       return {
         year,
-        value: values.reduce((acc, n) => acc + n, 0) / values.length
+        value: item.sum / item.count
       };
     });
 
@@ -155,26 +171,88 @@ export function computeFieldTrend(rows: ParsedRow[], normalized = false) {
   return { years, series };
 }
 
+export function computeJournalTrend(rows: ParsedRow[], normalized = false) {
+  const years = [...new Set(rows.map((r) => r.year))].sort((a, b) => a - b);
+  const journals = [...new Set(rows.map((r) => r.journal).filter(Boolean))].sort();
+
+  const bucket = new Map<string, { sum: number; count: number }>();
+  rows.forEach((r) => {
+    const key = `${r.journal}__${r.year}`;
+    const prev = bucket.get(key) ?? { sum: 0, count: 0 };
+    prev.sum += r.woke_score;
+    prev.count += 1;
+    bucket.set(key, prev);
+  });
+
+  const series = journals.map((journal) => {
+    const yearly = years.map((year) => {
+      const item = bucket.get(`${journal}__${year}`);
+      return {
+        year,
+        value: item ? item.sum / item.count : null
+      };
+    });
+
+    if (!normalized) {
+      return { journal, points: yearly };
+    }
+
+    // Z-score within each journal across selected years.
+    const vals = yearly.map((p) => p.value).filter((v): v is number => v !== null);
+    const mean = vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : 0;
+    const variance = vals.length
+      ? vals.reduce((acc, n) => acc + (n - mean) ** 2, 0) / vals.length
+      : 0;
+    const sd = Math.sqrt(variance) || 1;
+
+    return {
+      journal,
+      points: yearly.map((p) => ({
+        year: p.year,
+        value: p.value === null ? null : (p.value - mean) / sd
+      }))
+    };
+  });
+
+  return { years, series };
+}
+
 export function computeAuthorRanking(rows: ParsedRow[], minCount: number): AuthorStat[] {
-  const stats = new Map<string, { count: number; sum: number; sumSq: number }>();
+  const stats = new Map<string, number[]>();
 
   // Expand multi-author rows into per-author score contributions.
   rows.forEach((row) => {
     const uniqueAuthors = [...new Set(row.authorsList)];
     uniqueAuthors.forEach((author) => {
-      const prev = stats.get(author) ?? { count: 0, sum: 0, sumSq: 0 };
-      prev.count += 1;
-      prev.sum += row.woke_score;
-      prev.sumSq += row.woke_score ** 2;
+      const prev = stats.get(author) ?? [];
+      prev.push(row.woke_score);
       stats.set(author, prev);
     });
   });
 
   return [...stats.entries()]
-    .map(([author, s]) => {
-      const mean = s.sum / s.count;
-      const variance = Math.max(0, s.sumSq / s.count - mean ** 2);
-      return { author, count: s.count, mean, stdev: Math.sqrt(variance) };
+    .map(([author, scores]) => {
+      const sorted = [...scores].sort((a, b) => a - b);
+      const count = sorted.length;
+      const sum = sorted.reduce((acc, n) => acc + n, 0);
+      const mean = count ? sum / count : 0;
+      const variance =
+        count > 1
+          ? sorted.reduce((acc, n) => acc + (n - mean) ** 2, 0) / (count - 1)
+          : 0;
+      const stdev = Math.sqrt(variance);
+      const stderr = count ? stdev / Math.sqrt(count) : 0;
+      const ci95Low = Math.max(1, mean - 1.96 * stderr);
+      const ci95High = Math.min(10, mean + 1.96 * stderr);
+
+      return {
+        author,
+        count,
+        mean,
+        stdev,
+        ci95Low,
+        ci95High
+      };
     })
     .filter((a) => a.count >= minCount)
     .sort((a, b) => b.mean - a.mean || b.count - a.count);
@@ -185,21 +263,24 @@ export function getAuthorDetail(rows: ParsedRow[], authorName: string) {
     .filter((row) => row.authorsList.includes(authorName))
     .map<RankedPaper>((row) => ({
       title: row.title,
+      vol: row.vol,
+      iss: row.iss,
       year: row.year,
+      abstract: row.abstract,
       woke_score: row.woke_score,
       keywords: row.keywordsList,
       justification: row.justification,
       url: row.url,
       journal: row.journal,
       field: row.field,
-      author: row.author
+      author: row.author,
+      authorsList: row.authorsList
     }));
 
   const sorted = [...papers].sort((a, b) => b.woke_score - a.woke_score);
   return {
     timeline: papers.map((p) => ({ year: p.year, score: p.woke_score, title: p.title, url: p.url })),
-    top: sorted.slice(0, 5),
-    bottom: [...sorted].reverse().slice(0, 5)
+    ranked: sorted
   };
 }
 
@@ -208,14 +289,18 @@ export function computeJournalInternalRanking(rows: ParsedRow[], journal: string
   const sorted = [...subset].sort((a, b) => b.woke_score - a.woke_score);
   const toRanked = (r: ParsedRow): RankedPaper => ({
     title: r.title,
+    vol: r.vol,
+    iss: r.iss,
     year: r.year,
+    abstract: r.abstract,
     woke_score: r.woke_score,
     keywords: r.keywordsList,
     justification: r.justification,
     url: r.url,
     journal: r.journal,
     field: r.field,
-    author: r.author
+    author: r.author,
+    authorsList: r.authorsList
   });
 
   return {
@@ -237,12 +322,22 @@ export function topKeywords(rows: ParsedRow[], limit = 500) {
 }
 
 export function computeKeywordOverTime(rows: ParsedRow[], keyword: string) {
-  const years = [...new Set(rows.map((r) => r.year))].sort((a, b) => a - b);
+  const yearTotals = new Map<number, number>();
+  const yearKeywordHits = new Map<number, number>();
+
+  rows.forEach((row) => {
+    yearTotals.set(row.year, (yearTotals.get(row.year) ?? 0) + 1);
+    if (row.keywordsList.includes(keyword)) {
+      yearKeywordHits.set(row.year, (yearKeywordHits.get(row.year) ?? 0) + 1);
+    }
+  });
+
+  const years = [...yearTotals.keys()].sort((a, b) => a - b);
   return years.map((year) => {
-    const yearRows = rows.filter((r) => r.year === year);
-    const count = yearRows.filter((r) => r.keywordsList.includes(keyword)).length;
-    const normalizedPer1k = yearRows.length ? (count / yearRows.length) * 1000 : 0;
-    return { year, count, normalizedPer1k, totalPapers: yearRows.length };
+    const totalPapers = yearTotals.get(year) ?? 0;
+    const count = yearKeywordHits.get(year) ?? 0;
+    const normalizedPer1k = totalPapers ? (count / totalPapers) * 1000 : 0;
+    return { year, count, normalizedPer1k, totalPapers };
   });
 }
 

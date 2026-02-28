@@ -2,18 +2,17 @@
 
 import type { Filters } from "@/lib/types";
 import { MultiSelect } from "@/components/ui/MultiSelect";
+import type { MultiSelectOption } from "@/components/ui/MultiSelect";
 import { DualRange } from "@/components/ui/DualRange";
 
 type Props = {
   filters: Filters;
   years: [number, number];
-  journals: string[];
+  journals: MultiSelectOption[];
   fields: string[];
-  types: string[];
+  types: MultiSelectOption[];
   onFilters: (partial: Partial<Filters>) => void;
   onReset: () => void;
-  onFile: (file: File) => void;
-  onExport: () => void;
 };
 
 export function SidebarFilters({
@@ -23,9 +22,7 @@ export function SidebarFilters({
   fields,
   types,
   onFilters,
-  onReset,
-  onFile,
-  onExport
+  onReset
 }: Props) {
   return (
     <aside className="panel sticky top-16 h-[calc(100vh-5rem)] overflow-auto p-4">
@@ -46,16 +43,17 @@ export function SidebarFilters({
           max={10}
           value={filters.scoreRange}
           onChange={(scoreRange) => onFilters({ scoreRange })}
+          rangeClassName="accent-pink-500"
         />
+
+        <div>
+          <div className="label mb-1">Discipline</div>
+          <MultiSelect value={filters.fields} options={fields} onChange={(fields) => onFilters({ fields })} />
+        </div>
 
         <div>
           <div className="label mb-1">Journal</div>
           <MultiSelect value={filters.journals} options={journals} onChange={(journals) => onFilters({ journals })} />
-        </div>
-
-        <div>
-          <div className="label mb-1">Field</div>
-          <MultiSelect value={filters.fields} options={fields} onChange={(fields) => onFilters({ fields })} />
         </div>
 
         <div>
@@ -74,24 +72,8 @@ export function SidebarFilters({
         </div>
 
         <div>
-          <div className="label mb-1">Load CSV</div>
-          <input
-            type="file"
-            accept=".csv,text/csv"
-            className="input"
-            onChange={(e) => {
-              const file = e.target.files?.[0];
-              if (file) onFile(file);
-            }}
-          />
-        </div>
-
-        <div className="flex gap-2">
           <button className="btn-secondary w-full" onClick={onReset}>
             Reset Filters
-          </button>
-          <button className="btn-primary w-full" onClick={onExport}>
-            Export CSV
           </button>
         </div>
       </div>

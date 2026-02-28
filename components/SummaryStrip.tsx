@@ -16,7 +16,7 @@ export function SummaryStrip({ rows, mean, median, selectedYears, selectedJourna
     ["Median Score", median.toFixed(2)],
     ["Years", selectedYears],
     ["Journal Filters", selectedJournalsCount.toString()],
-    ["Field Filters", selectedFieldsCount.toString()]
+    ["Discipline Filters", selectedFieldsCount.toString()]
   ];
 
   return (

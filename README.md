@@ -10,14 +10,14 @@ Interactive offline-capable web dashboard for analyzing UTD-24 articles (2000-20
 - PapaParse
 - Vitest
 
-## Features Implemented (MVP)
-1. Overall Trend Chart: mean line + median toggle + IQR band + p90 toggle + smoothing (none/3y/5y)
-2. Journal x Year Heatmap: sortable journals by filtered mean, click-to-drill journal filter
-3. Field Trend Comparison: multi-line chart with raw/z-score toggle
-5. Author Woke Index: ranking table with min publication threshold and author drilldown modal
-7. Journal Internal Ranking: top/bottom papers in selected journal, with scope toggle
-8. Keyword Frequency Over Time: searchable keyword selector, raw/per-1k toggle, year click drilldown
-9. Word Clouds: by journal, by field, and emerging keywords with split-year control
+## Features Implemented
+1. Overview trend chart: yearly mean + 95% interval with smoothing (none/3y/5y)
+2. Discipline trend comparison: multi-line chart with raw/z-score toggle
+3. Journal trend comparison: multi-line chart with raw/z-score toggle
+4. Journal internal ranking: ranked paper cards with abstract expansion and score explanation
+5. Author ranking and drilldown: min-publication threshold, timeline scatter, and top-paper modal
+6. Keyword analysis: searchable keyword-over-time (raw/per-1k) with year click drilldown
+7. Interactive word cloud for keyword exploration
 
 ## Project Structure
 ```text
@@ -55,10 +55,19 @@ npm run dev
 3. Open `http://localhost:3000`.
 
 ## Data Input
-- Default load: `/public/sample.csv`
-- For full dataset: use sidebar `Load CSV` file input and select your local CSV (e.g. `data/utd_scores.csv`).
+- Default load flow: `/public/data/runtime_rows_manifest.json` (+ `/public/data/runtime_rows/*.json` chunks), with fallback to `/api/utd-csv`, then `/public/sample.csv`.
 - Required columns:
   - `year, vol, iss, author, title, abstract, url, type, journal, field, woke_score, keywords, justification`
+
+## Deployment and Large Files
+- `data/utd_scores.csv` is intentionally ignored by git via `.gitignore`.
+- Keep the full raw dataset local only; do not commit it.
+- Before pushing, run:
+```bash
+npm run check:tracked-size
+```
+- The app can still run without `data/utd_scores.csv`; the API route automatically falls back to `/public/sample.csv`.
+- For public deployments, commit generated artifacts under `public/data/` (including `runtime_rows` chunks) and `public/sample.csv`.
 
 ## Build Visualization JSON Artifacts
 Generate compact static files for deployment and chart loading:
@@ -79,6 +88,8 @@ This reads `data/utd_scores.csv` and writes these files under `public/data/`:
 - `wordcloud_by_journal.json`
 - `wordcloud_by_field.json`
 - `emerging_words_default_split.json`
+- `runtime_rows_manifest.json`
+- `runtime_rows/<year>.json` (full row-level runtime chunks)
 - `manifest.json`
 
 ## Large Dataset Workflow (Windows)
@@ -112,5 +123,6 @@ Includes unit tests for:
 - CSV parsed once and held in memory.
 - Global filter operation runs against parsed rows only.
 - Aggregations are memoized by filter state (`useMemo`).
-- Chart payloads use pre-aggregated outputs, not raw rows.
+- Most chart/table payloads are computed from filtered raw rows in-browser.
+- Prebuilt artifacts under `public/data/` are available for future static/SSR optimization paths.
 - Handles ~40k rows in client-side mode for MVP; Web Worker can be added later if needed.
