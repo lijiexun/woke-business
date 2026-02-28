@@ -1,6 +1,5 @@
 "use client";
 
-import Image from "next/image";
 import Link from "next/link";
 
 type Props = {
@@ -18,16 +17,18 @@ const itemLabel: Record<Props["active"], string> = {
 };
 
 export function TopNav({ active, onChange }: Props) {
+  const basePath = process.env.NEXT_PUBLIC_BASE_PATH ?? "";
+  const wokeStampSrc = `${basePath}/brand/woke-stamp.svg`;
+
   return (
     <nav className="panel sticky top-0 z-10 mb-4 flex flex-wrap items-center justify-between gap-2 p-3">
       <div className="flex items-end gap-3">
-        <Image
-          src="/brand/woke-stamp.svg"
+        <img
+          src={wokeStampSrc}
           alt="WOKE"
           width={300}
           height={106}
           className="h-9 w-auto sm:h-10 md:h-11"
-          priority
         />
         <div className="pb-0.5">
           <div className="brand-business">Business</div>
