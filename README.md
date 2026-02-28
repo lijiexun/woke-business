@@ -55,7 +55,7 @@ npm run dev
 3. Open `http://localhost:3000`.
 
 ## Data Input
-- Default load flow: `/public/data/runtime_rows_manifest.json` (+ `/public/data/runtime_rows/*.json` chunks), with fallback to `/api/utd-csv`, then `/public/sample.csv`.
+- Default load flow: `/public/data/runtime_rows_manifest.json` (+ `/public/data/runtime_rows/*.json` chunks), with fallback to `/public/sample.csv`.
 - Required columns:
   - `year, vol, iss, author, title, abstract, url, type, journal, field, woke_score, keywords, justification`
 
@@ -66,7 +66,7 @@ npm run dev
 ```bash
 npm run check:tracked-size
 ```
-- The app can still run without `data/utd_scores.csv`; the API route automatically falls back to `/public/sample.csv`.
+- The app can run without `data/utd_scores.csv` because runtime data is loaded from `public/data/runtime_rows*.json`.
 - For public deployments, commit generated artifacts under `public/data/` (including `runtime_rows` chunks) and `public/sample.csv`.
 
 ## Build Visualization JSON Artifacts
@@ -109,6 +109,11 @@ powershell -ExecutionPolicy Bypass -File scripts/compress-data.ps1 -InputCsv "D:
 npm run build
 npm run start
 ```
+
+## Deploy to GitHub Pages
+1. Push to `main`; the workflow `.github/workflows/deploy-pages.yml` builds and deploys `out/`.
+2. In GitHub repo settings, set `Pages -> Source` to `GitHub Actions`.
+3. Runtime data is served statically from `public/data/`; no server API is required.
 
 ## Tests
 ```bash

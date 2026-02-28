@@ -670,8 +670,17 @@ export function parseCsvText(text: string): ParsedRow[] {
   return parseRowRecords(parsed.data);
 }
 
+function resolvePublicUrl(url: string): string {
+  if (!url) return url;
+  if (/^(https?:)?\/\//.test(url) || url.startsWith("data:")) return url;
+  const basePath = (process.env.NEXT_PUBLIC_BASE_PATH ?? "").trim().replace(/\/+$/, "");
+  if (!basePath || !url.startsWith("/")) return url;
+  if (url === basePath || url.startsWith(`${basePath}/`)) return url;
+  return `${basePath}${url}`;
+}
+
 export async function loadCsvFromUrl(url: string): Promise<ParsedRow[]> {
-  const response = await fetch(url);
+  const response = await fetch(resolvePublicUrl(url));
   if (!response.ok) {
     throw new Error(`Failed to fetch CSV from ${url}: ${response.status} ${response.statusText}`);
   }
@@ -699,7 +708,7 @@ function toRecord(schema: string[], row: string[]): Record<string, string> {
 }
 
 export async function loadRuntimeRowsFromUrl(manifestUrl = "/data/runtime_rows_manifest.json"): Promise<ParsedRow[]> {
-  const manifestRes = await fetch(manifestUrl);
+  const manifestRes = await fetch(resolvePublicUrl(manifestUrl));
   if (!manifestRes.ok) {
     throw new Error(`Failed to fetch runtime rows manifest: ${manifestRes.status} ${manifestRes.statusText}`);
   }
@@ -713,7 +722,7 @@ export async function loadRuntimeRowsFromUrl(manifestUrl = "/data/runtime_rows_m
     [...manifest.files]
       .sort((a, b) => a.year - b.year)
       .map(async (file): Promise<RuntimeRowsChunk> => {
-        const res = await fetch(file.path);
+        const res = await fetch(resolvePublicUrl(file.path));
         if (!res.ok) {
           throw new Error(`Failed to fetch runtime rows chunk ${file.path}: ${res.status} ${res.statusText}`);
         }

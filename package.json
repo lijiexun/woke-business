@@ -6,6 +6,7 @@
     "build:data": "python scripts/generate_viz_json.py",
     "dev": "next dev",
     "build": "next build",
+    "build:pages": "NEXT_EXPORT=true next build",
     "start": "next start",
     "lint": "next lint",
     "test": "vitest run",

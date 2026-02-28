@@ -39,19 +39,12 @@ export default function HomePage() {
         store.setRows(rows);
       })
       .catch(() =>
-        loadCsvFromUrl("/api/utd-csv")
+        loadCsvFromUrl("/sample.csv")
           .then((rows) => {
-            if (!rows.length) throw new Error("CSV fallback resolved to zero rows.");
+            if (!rows.length) throw new Error("Sample dataset resolved to zero rows.");
             store.setRows(rows);
           })
-          .catch(() =>
-            loadCsvFromUrl("/sample.csv")
-              .then((rows) => {
-                if (!rows.length) throw new Error("Sample dataset resolved to zero rows.");
-                store.setRows(rows);
-              })
-              .catch(() => store.setError("Failed to load runtime JSON, full CSV route, and /public/sample.csv."))
-          )
+          .catch(() => store.setError("Failed to load runtime JSON and /public/sample.csv."))
       )
       .finally(() => store.setLoading(false));
   }, [store.rawRows.length, store.setError, store.setLoading, store.setRows]);
